@@ -24,8 +24,10 @@ namespace CheckQRCode
     {
         public string PathImageCaptureScreen;
         public string PathImageButtom;
+        public string PathInfor;
         public Image<Bgr,byte> ImageScreen;
         public Image<Bgr,byte> ImageButton;
+        public Image<Bgr, byte> ImageInfor;
         public string myconnectionstring;
         public string[] config;
         public SerialPort PortBarcode;
@@ -36,6 +38,7 @@ namespace CheckQRCode
             config = File.ReadAllLines(Directory.GetCurrentDirectory() + "\\Config.txt");
             PathImageCaptureScreen = Directory.GetCurrentDirectory() + "\\SetupImage\\Screenshooting.png";
             PathImageButtom = Directory.GetCurrentDirectory() + "\\SetupImage\\Button.png";
+            PathInfor = Directory.GetCurrentDirectory() + "\\SetupImage\\INFOR.png";
             myconnectionstring = Directory.GetCurrentDirectory() + "\\Database\\DataCheckQR.db";
             Locationscreen();
            
@@ -176,28 +179,16 @@ namespace CheckQRCode
             try
             {
                 byte[] b = Encoding.UTF8.GetBytes(a);
-                //SerialPort sr = new SerialPort();
-                //sr.PortName = ControlAdruino.Comport;
-                //sr.BaudRate = 9600;
-                //sr.Parity = Parity.None;
-                //sr.StopBits = StopBits.One;
-                //sr.DataBits = 8;
-                //sr.Open();
                 PortAdruino.Write(b, 0, b.Length);
-                //Thread.Sleep(500);
-                //sr.Close();
-                //return true;
             }
             catch (Exception)
             {
                 btn_measure.Enabled = true;
                 btn_measure.BackColor = Color.Green;
                 MessageBox.Show("Không gửi được dữ liệu đến Adruino", "Thông báo", MessageBoxButtons.OK, MessageBoxIcon.Warning, MessageBoxDefaultButton.Button1, MessageBoxOptions.ServiceNotification);
-                //return false;
             }
           
         }
-        
         private void FileSystemWatcherCheckQR_Created(object sender, FileSystemEventArgs e)
         {
             CheckQR c = new CheckQR(e.Name.Split('_')[1].Trim('\r'), e.FullPath);
@@ -216,21 +207,99 @@ namespace CheckQRCode
             {
                 conn.Open();
                 DataTable dt = new DataTable();
-                SQLiteDataAdapter adap = new SQLiteDataAdapter("SELECT * from DataCheckQR Where FirstCheck ='NG' or ReCheck ='NG' ", conn);
+                SQLiteDataAdapter adap = new SQLiteDataAdapter("SELECT * from DataCheckQR Where FirstCheck ='NG' or ReCheck ='NG' ORDER By TimeUpdate ASC ", conn);
                 adap.Fill(dt);
                 dtg_listerror.DataSource = dt;
                 conn.Close();
             }
             
         }
-
         private void Form1_FormClosed(object sender, FormClosedEventArgs e)
         {
             PortBarcode.Close();
             PortBarcode = null;
+            timeroffinfor.Stop();
             OnorOffRelay("0");
             PortAdruino.Close();
         }
 
+        private void Form1_KeyDown(object sender, KeyEventArgs e)
+        {
+            if (e.KeyCode == Keys.H)
+            {
+                Checkdata ef = new Checkdata();
+                ef.Show();
+            }
+
+        }
+
+        private void btn_infor_Click(object sender, EventArgs e)
+        {
+            CaptureandMoveMouse.Capture(PathImageCaptureScreen);
+            ImageScreen = new Image<Bgr, byte>(PathImageCaptureScreen);
+            ImageInfor = new Image<Bgr, byte>(PathInfor);
+            Mat imgout = new Mat();
+            CvInvoke.MatchTemplate(ImageScreen, ImageInfor, imgout, Emgu.CV.CvEnum.TemplateMatchingType.CcorrNormed);
+            // getpersenmatching
+            Image<Gray, float> result = ImageScreen.MatchTemplate(ImageInfor, TemplateMatchingType.CcoeffNormed);
+            double[] minValues, maxValues;
+            Point[] minLocations, maxLocations;
+            result.MinMax(out minValues, out maxValues, out minLocations, out maxLocations);
+            double similarityScore = maxValues[0];
+            //
+            double minVal = 0.8;
+            double maxVal = 0.0;
+            Point minLoc = new Point();
+            Point maxLoc = new Point();
+            CvInvoke.MinMaxLoc(imgout, ref minVal, ref maxVal, ref minLoc, ref maxLoc);
+            if (similarityScore > 0.7)
+            {
+
+                OnorOffRelay("1");
+                Thread.Sleep(Int32.Parse(ControlAdruino.DelayStart) * 1000);
+                CaptureandMoveMouse.Movemouseandclick(maxLoc, ImageInfor);
+            }
+            else
+            {
+                MessageBox.Show("Không tìm thấy nút Infor", "Thông báo", MessageBoxButtons.OK, MessageBoxIcon.Warning, MessageBoxDefaultButton.Button1, MessageBoxOptions.ServiceNotification);
+            }
+            //timeroffinfor.Start();
+        }
+
+        private void timeroffinfor_Tick(object sender, EventArgs e)
+        {
+            timeroffinfor.Stop();
+        }
+
+        private void dtg_listerror_CellFormatting(object sender, DataGridViewCellFormattingEventArgs e)
+        {
+            if (e.Value != null)
+            {
+                // Kiểm tra nếu cột đầu tiên của hàng này bằng "OK"
+                var cell1 = dtg_listerror.Rows[e.RowIndex].Cells[5];
+                if (cell1.Value != null && cell1.Value.ToString() == "NG")
+                {
+                    // Kiểm tra nếu cột thứ hai của hàng này bằng "NG"
+                    var cell2 = dtg_listerror.Rows[e.RowIndex].Cells[6];
+                    if ((cell2.Value != null && cell2.Value.ToString() == "NG") || cell2.Value == "")
+                    {
+                        // Đặt màu nền cho hàng này thành màu xanh
+                        dtg_listerror.Rows[e.RowIndex].DefaultCellStyle.BackColor = Color.Red;
+                    }
+                    else if (cell2.Value != null && cell2.Value.ToString() == "OK")
+                    {
+                        dtg_listerror.Rows[e.RowIndex].DefaultCellStyle.BackColor = Color.Green;
+                    }
+                }
+                else if (cell1.Value != null && cell1.Value.ToString() == "OK")
+                {
+                    var cell2 = dtg_listerror.Rows[e.RowIndex].Cells[6];
+                    if ((cell2.Value != null && cell2.Value.ToString() == "NG"))
+                    {
+                        dtg_listerror.Rows[e.RowIndex].DefaultCellStyle.BackColor = Color.Red;
+                    }
+                }
+            }
+        }
     }
 }
